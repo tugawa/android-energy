@@ -32,8 +32,11 @@
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <limits.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include <cutils/trace.h>
 
@@ -72,6 +75,11 @@ static const GcSpec kGcBeforeOomSpec = {
 };
 
 const GcSpec *GC_BEFORE_OOM = &kGcBeforeOomSpec;
+
+static const char* file_setspeed = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed";
+static const char* file_currfreq = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq";
+static const char* min_freq = "384000";
+static const char* max_freq = "1512000";
 
 /*
  * Initialize the GC heap.
@@ -453,6 +461,8 @@ void dvmCollectGarbageInternal(const GcSpec* spec)
     size_t currAllocated, currFootprint;
     size_t percentFree;
     int oldThreadPriority = INT_MAX;
+    int fd;
+    char buf[81];
 
     /* The heap lock must be held.
      */
@@ -476,6 +486,51 @@ void dvmCollectGarbageInternal(const GcSpec* spec)
     }
 
     gcHeap->gcRunning = true;
+
+    // Print current CPU frequency.
+    /*
+    fd = open(file_currfreq, O_RDONLY);
+    if (fd != -1) {
+      if (read(fd, buf, 80) != -1) {
+        ALOGD("(Before GC) Current CPU frequency is %s", buf);
+      } else {
+        ALOGD("Failed to read");
+      }
+      if (close(fd) == -1) {
+        ALOGD("Failed to close");
+      }
+    } else {
+        ALOGD("Failed to open");
+    }
+    */
+    
+    // Change CPU frequency during GC.
+    fd = open(file_setspeed, O_RDWR);
+    if (fd != -1) {
+      write(fd, min_freq, strlen(min_freq) + 1);
+      if (close(fd) == -1) {
+        ALOGD("Failed to close");
+      }
+    } else {
+        ALOGD("Failed to write");
+    }
+
+    // Check CPU frequency has been changed.
+    fd = open(file_currfreq, O_RDONLY);
+    if (fd != -1) {
+      int ret;
+      if ((ret = read(fd, buf, 80)) != -1) {
+        buf[ret] = '\0';
+        ALOGD("(Before GC) CPU frequency is changed to %s", buf);
+      } else {
+        ALOGD("Failed to read");
+      }
+      if (close(fd) == -1) {
+        ALOGD("Failed to close");
+      }
+    } else {
+        ALOGD("Failed to open");
+    }
 
     rootStart = dvmGetRelativeTimeMsec();
     ATRACE_BEGIN("GC: Threads Suspended"); // Suspend A
@@ -700,6 +755,51 @@ void dvmCollectGarbageInternal(const GcSpec* spec)
     if (gcHeap->ddmNhsgWhen != 0) {
         LOGD_HEAP("Dumping native heap to DDM");
         dvmDdmSendHeapSegments(false, true);
+    }
+
+    // Print current CPU frequency.
+    /*
+    fd = open(file_currfreq, O_RDONLY);
+    if (fd != -1) {
+      if (read(fd, buf, 80) != -1) {
+        ALOGD("(After GC) Current CPU frequency is %s", buf);
+      } else {
+        ALOGD("Failed to read");
+      }
+      if (close(fd) == -1) {
+        ALOGD("Failed to close");
+      }
+    } else {
+        ALOGD("Failed to open");
+    }
+    */
+    
+    // Restore CPU frequency max.
+    fd = open(file_setspeed, O_RDWR);
+    if (fd != -1) {
+      write(fd, max_freq, strlen(max_freq));
+      if (close(fd) == -1) {
+        ALOGD("Failed to close");
+      }
+    } else {
+      ALOGD("Failed to write");
+    }
+
+    // Check CPU frequency has been changed.
+    fd = open(file_currfreq, O_RDONLY);
+    if (fd != -1) {
+      int ret;
+      if ((ret = read(fd, buf, 80)) != -1) {
+        buf[ret] = '\0';
+        ALOGD("(After GC) Restored CPU frequency is %s", buf);
+      } else {
+        ALOGD("Failed to read");
+      }
+      if (close(fd) == -1) {
+        ALOGD("Failed to close");
+      }
+    } else {
+        ALOGD("Failed to open");
     }
 
     ATRACE_END(); // Top-level GC

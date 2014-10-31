@@ -16,9 +16,6 @@
 
 #include <stdint.h>
 #include <sys/mman.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <errno.h>
 #include <cutils/ashmem.h>
 
@@ -477,36 +474,6 @@ static bool addNewHeap(HeapSource *hs)
     memmove(&hs->heaps[1], &hs->heaps[0], hs->numHeaps * sizeof(hs->heaps[0]));
     hs->heaps[0] = heap;
     hs->numHeaps++;
-
-    // File open test
-    ALOGD("Start file open test");
-    const char* gov_file =
-        "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_governor";
-    const char* freq_file =
-        "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_setspeed";
-    const char* freqget_file =
-        "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq";
-#define CPU_NUM 2
-#define GCPROF_BUFSIZE 1024
-    static int fd_gov[CPU_NUM];
-    static int fd_freq[CPU_NUM];
-    static int fd_getter[CPU_NUM];
-
-    int res = 1;
-    for (int cpu_id = 0; cpu_id < CPU_NUM ; cpu_id++ ) {
-        char buf[GCPROF_BUFSIZE];
-        // scaling_governor
-        sprintf(buf, gov_file, cpu_id);
-        fd_gov[cpu_id] = open(buf, O_RDWR);
-        // scaling_setspeed
-        sprintf(buf, freq_file, cpu_id);
-        fd_freq[cpu_id] = open(buf, O_RDWR);
-        res &= fd_gov[cpu_id] & fd_freq[cpu_id];
-        // scaling_cur_freq
-        sprintf(buf, freqget_file, cpu_id);
-        fd_getter[cpu_id] = open(buf, O_RDONLY);
-    }
-    ALOGD("Finish file open test");
 
     return true;
 }
